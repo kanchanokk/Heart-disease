@@ -1,151 +1,41 @@
 import streamlit as st
-import pandas as pd
-import math
-from pathlib import Path
+import numpy as np
+from tensorflow.keras.models import load_model
 
-# Set the title and favicon that appear in the Browser's tab bar.
-st.set_page_config(
-    page_title='GDP dashboard',
-    page_icon=':earth_americas:', # This is an emoji shortcode. Could be a URL too.
-)
+# โหลดโมเดลที่ฝึกเสร็จแล้ว
+model = load_model('heart_disease .h5')  # ระบุที่อยู่ของไฟล์โมเดล
 
-# -----------------------------------------------------------------------------
-# Declare some useful functions.
+# สร้างฟังก์ชันสำหรับการทำนาย
+def predict_heart_disease(age, sex, cp, trestbps, chol, fbs, restecg, thalach, exang, oldpeak, slope, ca, thal):
+    # รับข้อมูลจากผู้ใช้ในรูปแบบ numpy array
+    input_data = np.array([[age, sex, cp, trestbps, chol, fbs, restecg, thalach, exang, oldpeak, slope, ca, thal]])
+    # ทำนายผลลัพธ์จากโมเดล
+    prediction = model.predict(input_data)
+    return prediction[0][0]  # คืนค่าความน่าจะเป็น
 
-@st.cache_data
-def get_gdp_data():
-    """Grab GDP data from a CSV file.
+# ส่วนติดต่อผู้ใช้ (UI)
+st.title("Heart Disease Prediction Web App")
+st.write("กรุณากรอกข้อมูลเพื่อทำนายความเสี่ยงโรคหัวใจ")
 
-    This uses caching to avoid having to read the file every time. If we were
-    reading from an HTTP endpoint instead of a file, it's a good idea to set
-    a maximum age to the cache with the TTL argument: @st.cache_data(ttl='1d')
-    """
+# รับข้อมูลจากผู้ใช้
+age = st.number_input("Age", min_value=0, max_value=120, value=50)
+sex = st.selectbox("Sex (0: Female, 1: Male)", [0, 1])
+cp = st.selectbox("Chest Pain Type (0-3)", [0, 1, 2, 3])
+trestbps = st.number_input("Resting Blood Pressure (mm Hg)", min_value=0, max_value=250, value=120)
+chol = st.number_input("Cholesterol (mg/dl)", min_value=0, max_value=600, value=200)
+fbs = st.selectbox("Fasting Blood Sugar > 120 mg/dl (0: No, 1: Yes)", [0, 1])
+restecg = st.selectbox("Resting ECG Results (0-2)", [0, 1, 2])
+thalach = st.number_input("Max Heart Rate Achieved", min_value=0, max_value=220, value=150)
+exang = st.selectbox("Exercise-Induced Angina (0: No, 1: Yes)", [0, 1])
+oldpeak = st.number_input("ST Depression Induced by Exercise", min_value=0.0, max_value=10.0, value=1.0)
+slope = st.selectbox("Slope of Peak Exercise ST Segment (0-2)", [0, 1, 2])
+ca = st.selectbox("Number of Major Vessels (0-3)", [0, 1, 2, 3])
+thal = st.selectbox("Thalassemia (0-3)", [0, 1, 2, 3])
 
-    # Instead of a CSV on disk, you could read from an HTTP endpoint here too.
-    DATA_FILENAME = Path(__file__).parent/'data/gdp_data.csv'
-    raw_gdp_df = pd.read_csv(DATA_FILENAME)
-
-    MIN_YEAR = 1960
-    MAX_YEAR = 2022
-
-    # The data above has columns like:
-    # - Country Name
-    # - Country Code
-    # - [Stuff I don't care about]
-    # - GDP for 1960
-    # - GDP for 1961
-    # - GDP for 1962
-    # - ...
-    # - GDP for 2022
-    #
-    # ...but I want this instead:
-    # - Country Name
-    # - Country Code
-    # - Year
-    # - GDP
-    #
-    # So let's pivot all those year-columns into two: Year and GDP
-    gdp_df = raw_gdp_df.melt(
-        ['Country Code'],
-        [str(x) for x in range(MIN_YEAR, MAX_YEAR + 1)],
-        'Year',
-        'GDP',
-    )
-
-    # Convert years from string to integers
-    gdp_df['Year'] = pd.to_numeric(gdp_df['Year'])
-
-    return gdp_df
-
-gdp_df = get_gdp_data()
-
-# -----------------------------------------------------------------------------
-# Draw the actual page
-
-# Set the title that appears at the top of the page.
-'''
-# :earth_americas: GDP dashboard
-
-Browse GDP data from the [World Bank Open Data](https://data.worldbank.org/) website. As you'll
-notice, the data only goes to 2022 right now, and datapoints for certain years are often missing.
-But it's otherwise a great (and did I mention _free_?) source of data.
-'''
-
-# Add some spacing
-''
-''
-
-min_value = gdp_df['Year'].min()
-max_value = gdp_df['Year'].max()
-
-from_year, to_year = st.slider(
-    'Which years are you interested in?',
-    min_value=min_value,
-    max_value=max_value,
-    value=[min_value, max_value])
-
-countries = gdp_df['Country Code'].unique()
-
-if not len(countries):
-    st.warning("Select at least one country")
-
-selected_countries = st.multiselect(
-    'Which countries would you like to view?',
-    countries,
-    ['DEU', 'FRA', 'GBR', 'BRA', 'MEX', 'JPN'])
-
-''
-''
-''
-
-# Filter the data
-filtered_gdp_df = gdp_df[
-    (gdp_df['Country Code'].isin(selected_countries))
-    & (gdp_df['Year'] <= to_year)
-    & (from_year <= gdp_df['Year'])
-]
-
-st.header('GDP over time', divider='gray')
-
-''
-
-st.line_chart(
-    filtered_gdp_df,
-    x='Year',
-    y='GDP',
-    color='Country Code',
-)
-
-''
-''
-
-
-first_year = gdp_df[gdp_df['Year'] == from_year]
-last_year = gdp_df[gdp_df['Year'] == to_year]
-
-st.header(f'GDP in {to_year}', divider='gray')
-
-''
-
-cols = st.columns(4)
-
-for i, country in enumerate(selected_countries):
-    col = cols[i % len(cols)]
-
-    with col:
-        first_gdp = first_year[first_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-        last_gdp = last_year[last_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-
-        if math.isnan(first_gdp):
-            growth = 'n/a'
-            delta_color = 'off'
-        else:
-            growth = f'{last_gdp / first_gdp:,.2f}x'
-            delta_color = 'normal'
-
-        st.metric(
-            label=f'{country} GDP',
-            value=f'{last_gdp:,.0f}B',
-            delta=growth,
-            delta_color=delta_color
-        )
+# คำนวณผลเมื่อกดปุ่ม
+if st.button("Predict"):
+    result = predict_heart_disease(age, sex, cp, trestbps, chol, fbs, restecg, thalach, exang, oldpeak, slope, ca, thal)
+    if result > 0.5:
+        st.write(f"ผลการทำนาย: คุณมีความเสี่ยงโรคหัวใจ (ความน่าจะเป็น: {result:.2f})")
+    else:
+        st.write(f"ผลการทำนาย: คุณไม่มีความเสี่ยงโรคหัวใจ (ความน่าจะเป็น: {result:.2f})")
